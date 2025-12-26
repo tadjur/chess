@@ -8,10 +8,11 @@ public final class ConsoleGame {
 
   public static void play(boolean enginePlaysWhite, String fen) {
     Board board = new Board();
+    TranspositionTable tt = new TranspositionTable(512);
     if (fen == null) board.loadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     else board.loadFEN(fen);
 
-    Search search = new Search();
+    Search search = new Search(tt);
 
     Scanner sc = new Scanner(System.in);
 
@@ -21,7 +22,17 @@ public final class ConsoleGame {
       if (checkGameOver(board)) return;
 
       if ((board.sideToMove == Constants.WHITE) == enginePlaysWhite) {
-        int move = search.search(board, 12);
+        long start = System.currentTimeMillis();
+
+        int move = search.search(board, 10);
+
+        long elapsed = System.currentTimeMillis() - start;
+        double seconds = elapsed / 1000.0;
+
+        double nps = seconds > 0 ? (search.nodes / seconds) : 0;
+
+
+
         if (move == 0) {
           if (board.isRepetition()) {
             System.out.println("Draw by repetition");
@@ -34,8 +45,10 @@ public final class ConsoleGame {
         }
 
 
-        System.out.println("Engine plays: " + Move.toUCI(move));
-        board.makeMove(move);
+        System.out.printf(
+            "Engine plays: %s   (nodes=%d, time=%.2fs, NPS=%.0f)\n",
+            Move.toUCI(move), search.nodes, seconds, nps
+        );        board.makeMove(move);
       } else {
         System.out.print("Your move: ");
         String moveStr = sc.nextLine();

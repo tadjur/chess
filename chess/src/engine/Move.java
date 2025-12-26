@@ -62,7 +62,6 @@ public final class Move {
         sb.append(squareToString(from));
         sb.append(squareToString(to));
 
-        // Promotions are 8..15 in your scheme, so bit 3 is set.
         if ((flag & 8) != 0) {
             sb.append(promoChar(promo));
         }
@@ -100,9 +99,7 @@ public final class Move {
 
         boolean isCapture = board.getPieceOn(to) != -1;
 
-        // =====================
-        // Promotion
-        // =====================
+
         if (uci.length() == 5) {
             char pc = uci.charAt(4);
             boolean white = (piece & 1) == 0;
@@ -136,9 +133,7 @@ public final class Move {
             return Move.encode(from, to, promo, flags);
         }
 
-        // =====================
-        // Castling
-        // =====================
+
         if (piece == Constants.W_KING) {
             if (from == Constants.E1 && to == Constants.G1)
                 return Move.encode(from, to, 0, Constants.KING_CASTLE);
@@ -153,24 +148,15 @@ public final class Move {
                 return Move.encode(from, to, 0, Constants.QUEEN_CASTLE);
         }
 
-        // =====================
-        // En passant
-        // =====================
         if ((piece == Constants.W_PAWN || piece == Constants.B_PAWN)
             && to == board.enPassantSquare) {
             return Move.encode(from, to, 0, Constants.EN_PASSANT);
         }
 
-        // =====================
-        // Capture
-        // =====================
         if (isCapture) {
             flags = Constants.CAPTURE;
         }
 
-        // =====================
-        // Double pawn push
-        // =====================
         if (piece == Constants.W_PAWN && from / 8 == 1 && to / 8 == 3)
             flags = Constants.DOUBLE_PAWN_PUSH;
 

@@ -6,8 +6,6 @@ public class TranspositionTable {
     public static final int LOWER = 1;
     public static final int UPPER = 2;
 
-
-
     public static final int MATE_THRESHOLD = 32000;
 
     private static final int BUCKET_SIZE = 4;
@@ -30,10 +28,8 @@ public class TranspositionTable {
 
     private int numBuckets;
 
-    private final ProbeResult probeResult = new ProbeResult();
-
-
-    //Probe result status flags
+    private final ThreadLocal<ProbeResult> localResult =
+        ThreadLocal.withInitial(ProbeResult::new);
 
     public static final int SHALLOW_HIT = 1;
     public static final int EXACT_HIT = 2;
@@ -50,7 +46,6 @@ public class TranspositionTable {
         int score;
         int bestMove;
     }
-
 
     public TranspositionTable(int sizeMB) {
         long tableBytes = (long) sizeMB * 1024 * 1024;
@@ -80,8 +75,6 @@ public class TranspositionTable {
         increaseGeneration();
     }
 
-
-
     private int largestPowerOfTwo(int num) {
         int p = 1;
         while (p <= num) {
@@ -101,7 +94,6 @@ public class TranspositionTable {
         int g = ages[a]; ages[a] = ages[b]; ages[b] = g;
     }
 
-
     public void store(long hash, int depth, int flag, int score, int bestMove, int ply) {
         int bucketIndex = (int) hash & (numBuckets - 1);
         int entryIndex = bucketIndex * BUCKET_SIZE;
@@ -112,17 +104,15 @@ public class TranspositionTable {
             score -= ply;
         }
 
-
         for (int i = entryIndex; i < entryIndex + BUCKET_SIZE; i++) {
             if (hashes[i] == 0) {
-                hashes[i] = hash;
                 depths[i] = depth;
                 flags[i] = flag;
                 scores[i] = score;
                 bestMoves[i] = bestMove;
                 ages[i] = currentGeneration;
+                hashes[i] = hash;
 
-                // enforce invariant: slot 0 has deepest
                 if (i != entryIndex && depths[i] > depths[entryIndex]) {
                     swap(entryIndex, i);
                 }
@@ -141,7 +131,6 @@ public class TranspositionTable {
         }
 
         int victim = entryIndex + 1;
-        int oldestAge = ages[victim];
 
         for (int i = entryIndex + 2; i < entryIndex + BUCKET_SIZE; i++) {
             if (depths[i] < depths[victim]
@@ -160,7 +149,7 @@ public class TranspositionTable {
     }
 
     public ProbeResult probe(long hash, int depth, int alpha, int beta, int ply) {
-        ProbeResult result = probeResult;
+        ProbeResult result = localResult.get();
         result.status = MISS;
 
         int bucketIndex = (int) hash & (numBuckets - 1);
@@ -213,7 +202,6 @@ public class TranspositionTable {
                     return result;
                 }
             }
-
             shallowBestMove = bestMoves[i];
         }
 
@@ -224,7 +212,6 @@ public class TranspositionTable {
 
             found = true;
             ages[j] = currentGeneration;
-
 
             if (depths[j] >= depth) {
                 if (flags[j] == EXACT) {

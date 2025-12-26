@@ -3,14 +3,7 @@ package engine;
 import util.BitHelper;
 import util.Constants;
 
-import java.util.List;
-
 public class MoveGenerator {
-
-
-    private static boolean isKing(int piece) {
-        return piece == Constants.W_KING || piece == Constants.B_KING;
-    }
 
 
 
@@ -288,11 +281,7 @@ public class MoveGenerator {
                 | BitHelper.hyperbolaQuintessence(occupancy,Constants.RANK_MASKS[square],square);
     }
 
-    public static long generateQueenRays(long occupancy, int square){
-        return generateBishopRays(occupancy,square) | generateRookRays(occupancy,square);
-    }
-
-
+    
     public static int generateCaptures(Board board, int[] moves) {
         int moveCount = 0;
         moveCount = generatePawnCaptures(board, moves, moveCount);

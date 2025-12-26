@@ -28,7 +28,6 @@ public class BitHelper {
         return out;
     }
 
-
     public static long reverse(long bb) {
         return Long.reverse(bb);
     }

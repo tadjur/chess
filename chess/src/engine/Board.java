@@ -29,7 +29,6 @@ public class Board implements CloneableBoard {
     public long[] keyHistory = new long[256];
     public int historyPly = 0;
 
-    // index after last capture or pawn move
     public int lastIrreversiblePly = 0;
 
 
@@ -262,8 +261,6 @@ public class Board implements CloneableBoard {
                 ", to-square: " + to + ", flag :" + flag);
         }
 
-
-
         final Undo u = undoStack[undoTop++];
         u.move = move;
         u.movingPiece = movingPiece;
@@ -488,15 +485,12 @@ public class Board implements CloneableBoard {
         b.whiteKingSq = whiteKingSq;
         b.blackKingSq = blackKingSq;
 
-        // pieceAt
         System.arraycopy(this.pieceAt, 0, b.pieceAt, 0, 64);
 
-        // history
         b.historyPly = historyPly;
         b.lastIrreversiblePly = lastIrreversiblePly;
         System.arraycopy(this.keyHistory, 0, b.keyHistory, 0, historyPly);
 
-        // undo stack
         b.undoTop = undoTop;
         for (int i = 0; i < undoTop; i++) {
             b.undoStack[i].copyFrom(this.undoStack[i]);
@@ -564,8 +558,6 @@ public class Board implements CloneableBoard {
     public boolean isRepetition() {
         long key = zobristKey;
 
-        // Go backwards in steps of 2 plies (same side to move),
-        // but STOP at last irreversible move
         for (int i = historyPly - 2; i >= lastIrreversiblePly; i -= 2) {
             if (keyHistory[i] == key) {
                 return true;

@@ -1,9 +1,14 @@
 package engine;
 
 import util.Constants;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicLong;
+
 import static engine.ClassicalEvaluator.evaluate;
 
 public final class Search {
+
     public static final int INF = 100_000;
     public static final int MATE = 30000;
 
@@ -12,26 +17,75 @@ public final class Search {
 
     private static final int HISTORY_MAX = 200_000;
 
+    public static final AtomicLong GLOBAL_NODES = new AtomicLong();
+
+
     private final SearchContext context = new SearchContext();
 
-    private final TranspositionTable tt = new TranspositionTable(64); // MB, adjust later
+    private final TranspositionTable tt;
 
-    public int nodes;
+    public long nodes;
 
     private int rootBestMove;
     private int previousBestMove;
-    int previousScore;
 
-    // Killer moves: [ply][0 or 1]
-    private final int[][] killerMoves = new int[128][2];
 
-    // History heuristic: [side][toSquare]
-    private final int[][][] history = new int[2][64][64];
 
+    public Search(TranspositionTable tt) {
+        this.tt = tt;
+    }
 
 
 
     public int search(Board board, int maxDepth) {
+
+        final int THREADS = Runtime.getRuntime().availableProcessors();
+        System.out.println(THREADS);
+
+        long startNodes = GLOBAL_NODES.get();
+
+
+        if (THREADS == 1) {
+            return searchSingle(board, maxDepth);
+        }
+
+        tt.increaseGeneration();
+
+        ExecutorService pool =
+            java.util.concurrent.Executors.newFixedThreadPool(THREADS);
+
+        java.util.List<java.util.concurrent.Future<Integer>> futures =
+            new java.util.ArrayList<>();
+
+        for (int t = 0; t < THREADS; t++) {
+            Board copy = board.copy();
+            Search worker = new Search(tt);
+            futures.add(pool.submit(() -> worker.searchSingle(copy, maxDepth)));
+        }
+
+        int bestMove = 0;
+
+        for (var f : futures) {
+            try {
+                int move = f.get();
+                if (move != 0 && bestMove == 0) {
+                    bestMove = move;
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (bestMove == 0) bestMove = previousBestMove;
+
+        long endNodes = GLOBAL_NODES.get();
+        this.nodes = endNodes - startNodes;
+
+        pool.shutdown();
+        return bestMove;
+    }
+
+
+
+    public int searchSingle(Board board, int maxDepth) {
         nodes = 0;
         rootBestMove = 0;
         previousBestMove = 0;
@@ -39,20 +93,18 @@ public final class Search {
         int previousScore = 0;
 
 
-        for (int i = 0; i < killerMoves.length; i++) {
-            killerMoves[i][0] = 0;
-            killerMoves[i][1] = 0;
+        for (int i = 0; i < context.killerMoves.length; i++) {
+            context.killerMoves[i][0] = 0;
+            context.killerMoves[i][1] = 0;
         }
 
         for (int s = 0; s < 2; s++) {
             for (int from = 0; from < 64; from++) {
                 for (int to = 0; to < 64; to++) {
-                    history[s][from][to] >>= 1;
+                    context.history[s][from][to] >>= 1;
                 }
             }
         }
-
-
 
         for (int depth = 1; depth <= maxDepth; depth++) {
             rootBestMove = previousBestMove;
@@ -66,7 +118,6 @@ public final class Search {
                 score = alphaBeta(board, depth, -INF, INF, 0,true);
             }
 
-            // save PV root move for next iteration
             previousBestMove = rootBestMove;
 
             previousScore = score;
@@ -78,7 +129,7 @@ public final class Search {
 
 
     private int alphaBeta(Board board, int depth, int alpha, int beta, int ply, boolean allowNull) {
-        nodes++;
+        GLOBAL_NODES.incrementAndGet();
 
         if (ply > 0 && board.isRepetition()) {
             return 0;
@@ -97,16 +148,10 @@ public final class Search {
         int ttMove = ttResult.bestMove;
 
         switch (ttResult.status) {
-            case TranspositionTable.EXACT_HIT:
+            case TranspositionTable.EXACT_HIT, TranspositionTable.BETA_CUTOFF, TranspositionTable.ALPHA_CUTOFF:
                 return ttResult.score;
 
-            case TranspositionTable.BETA_CUTOFF:
-                return ttResult.score;
-
-            case TranspositionTable.ALPHA_CUTOFF:
-                return ttResult.score;
-
-            case TranspositionTable.SHALLOW_HIT:
+          case TranspositionTable.SHALLOW_HIT:
                 ttMove = ttResult.bestMove;
                 break;
 
@@ -124,7 +169,6 @@ public final class Search {
             && !board.isInCheck()
             && board.nonPawnMaterial(board.sideToMove) >= 8){
 
-            // make null move
             board.makeNullMove();
 
             int score = -alphaBeta(
@@ -151,7 +195,6 @@ public final class Search {
         }
 
 
-        //score moves using MVV-LVA
         for (int i = 0; i < count; i++) {
             scores[i] = scoreMove(board, moves[i], ttMove, ply);
         }
@@ -163,7 +206,6 @@ public final class Search {
         boolean searchedOneLegal = false;
 
         for (int i = 0; i < count; i++) {
-            // pick best remaining move
             int bestIdx = i;
             int bestScore = scores[i];
             for (int j = i + 1; j < count; j++) {
@@ -173,7 +215,6 @@ public final class Search {
                 }
             }
 
-            // swap move + score
             int move = moves[bestIdx];
             moves[bestIdx] = moves[i];
             moves[i] = move;
@@ -183,11 +224,9 @@ public final class Search {
             scores[i] = tmp;
 
             int moverSide = board.sideToMove;
-            boolean inCheck = board.isInCheck();
 
             board.makeMove(move);
 
-            // legality check (pseudo-legal generator)
             int us = board.sideToMove ^ 1;
             int kingSq = (us == Constants.WHITE) ? board.whiteKingSq : board.blackKingSq;
             if (AttackGenerator.isSquareAttacked(board, kingSq, board.sideToMove)) {
@@ -196,34 +235,27 @@ public final class Search {
             }
 
             hasLegalMove = true;
-
+            boolean inCheck = board.isInCheck();
 
             int score;
 
             if (!searchedOneLegal) {
-                // First legal move: full window, full depth
                 searchedOneLegal = true;
                 score = -alphaBeta(board, depth - 1, -beta, -alpha, ply + 1, true);
             } else {
                 boolean quiet = !Move.isCapture(move);
                 int reduction = 0;
 
-                // Late Move Reductions (safe version)
                 if (!inCheck && quiet && depth >= 3 && i >= 3) {
                     reduction = 1;
                     if (i >= 8 && depth >= 5) reduction = 2;
                 }
 
                 int newDepth = (depth - 1) - reduction;
-
-                // Reduced-depth scout search
                 score = -alphaBeta(board, newDepth, -alpha - 1, -alpha, ply + 1, true);
 
-                // If it improves alpha, re-search full depth
                 if (score > alpha) {
                     score = -alphaBeta(board, depth - 1, -alpha - 1, -alpha, ply + 1, true);
-
-                    // If still not fail-high, do full window (standard PVS)
                     if (score > alpha && score < beta) {
                         score = -alphaBeta(board, depth - 1, -beta, -alpha, ply + 1, true);
                     }
@@ -237,42 +269,32 @@ public final class Search {
                 bestMove = move;
                 if (ply == 0) rootBestMove = move;
             }
-
             if (score > alpha) {
                 alpha = score;
             }
-
             if (alpha >= beta) {
-
-                // Update killer & history for quiet moves only
                 if (!Move.isCapture(move)) {
-                    if (killerMoves[ply][0] != move) {
-                        killerMoves[ply][1] = killerMoves[ply][0];
-                        killerMoves[ply][0] = move;
+                    if (context.killerMoves[ply][0] != move) {
+                        context.killerMoves[ply][1] = context.killerMoves[ply][0];
+                        context.killerMoves[ply][0] = move;
                     }
-
                     if (ply > 0 && !Move.isCapture(move)) {
                         updateHistory(moverSide, move, depth);
                     }
-
-
-
                 }
-
                 break;
             }
-
         }
 
         if (!hasLegalMove)
         {
             if (board.isInCheck())
             {
-                return -(MATE - ply); // checkmate
+                return -(MATE - ply);
             }
             else
             {
-                return 0; // stalemate
+                return 0;
             }
         }
 
@@ -302,9 +324,8 @@ public final class Search {
 
     private int quiescence(Board board, int alpha, int beta, int ply)
     {
-        nodes++;
+        GLOBAL_NODES.incrementAndGet();
         if (board.halfmoveClock >= 100) return 0;
-
         if (ply >= Q_MAX_PLY) {
             return evaluate(board);
         }
@@ -322,15 +343,12 @@ public final class Search {
         int[] scores = context.scores[ply];
         int count = MoveGenerator.generateCaptures(board, moves);
 
-
-
         for (int i = 0; i < count; i++) {
             scores[i] = scoreMove(board, moves[i], 0, ply);
         }
 
         for (int i = 0; i < count; i++)
         {
-            // pick best remaining move
             int bestIdx = i;
             int bestScore = scores[i];
 
@@ -341,7 +359,6 @@ public final class Search {
                 }
             }
 
-            // swap move + score
             int move = moves[bestIdx];
             moves[bestIdx] = moves[i];
             moves[i] = move;
@@ -349,8 +366,6 @@ public final class Search {
             int tmp = scores[bestIdx];
             scores[bestIdx] = scores[i];
             scores[i] = tmp;
-
-            // === now process moves[i] ===
 
             board.makeMove(move);
 
@@ -391,19 +406,18 @@ public final class Search {
             return 100_000 + pieceValue(victim) * 10 - pieceValue(attacker);
         }
 
-        // Quiet moves
-        if (move == killerMoves[ply][0]) return 90_000;
-        if (move == killerMoves[ply][1]) return 80_000;
+        if (move == context.killerMoves[ply][0]) return 90_000;
+        if (move == context.killerMoves[ply][1]) return 80_000;
 
-        return history[board.sideToMove][Move.from(move)][Move.to(move)];
+        return context.history[board.sideToMove][Move.from(move)][Move.to(move)];
     }
 
     private int pieceValue(int piece) {
         return switch (piece) {
-            case Constants.W_PAWN,   Constants.B_PAWN   -> 1;
-            case Constants.W_KNIGHT,Constants.B_KNIGHT -> 3;
-            case Constants.W_BISHOP,Constants.B_BISHOP -> 3;
-            case Constants.W_ROOK,  Constants.B_ROOK   -> 5;
+            case Constants.W_PAWN, Constants.B_PAWN   -> 1;
+            case Constants.W_KNIGHT, Constants.B_KNIGHT -> 3;
+            case Constants.W_BISHOP, Constants.B_BISHOP -> 3;
+            case Constants.W_ROOK, Constants.B_ROOK   -> 5;
             case Constants.W_QUEEN, Constants.B_QUEEN  -> 9;
             default -> 0;
         };
@@ -412,8 +426,8 @@ public final class Search {
     private void updateHistory(int moverSide, int move, int depth) {
         int from = Move.from(move);
         int to   = Move.to(move);
-        int v = history[moverSide][from][to] + depth * depth;
-        history[moverSide][from][to] = Math.min(v, HISTORY_MAX);
+        int v = context.history[moverSide][from][to] + depth * depth;
+        context.history[moverSide][from][to] = Math.min(v, HISTORY_MAX);
     }
 
 

@@ -10,6 +10,9 @@ public final class SearchContext {
 
   public final int[][] scores = new int[MAX_PLY][MAX_MOVES];
 
-  // (Later) killers/history, PV, etc. can live here too
+  public final int[][] killerMoves = new int[128][2];
+
+  public final int[][][] history = new int[2][64][64];
+
 }
 

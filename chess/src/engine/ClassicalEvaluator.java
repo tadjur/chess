@@ -9,17 +9,21 @@ import util.Constants;
  */
 public final class ClassicalEvaluator {
 
-    // -----------------------------
-    // Weights (tune these!)
-    // -----------------------------
+    private static final class AttackCache {
+        long whiteAtt;
+        long blackAtt;
+    }
+
+
+    // Weights
     private static final int TEMPO_BONUS = 12;
 
     // Pawn structure
-    private static final int DOUBLED_PAWN_PENALTY = 12;
-    private static final int ISOLATED_PAWN_PENALTY = 10;
-    private static final int BACKWARD_PAWN_PENALTY = 8;
+    private static final int DOUBLED_PAWN_PENALTY = 20;
+    private static final int ISOLATED_PAWN_PENALTY = 18;
+    private static final int BACKWARD_PAWN_PENALTY = 14;
     private static final int PASSED_PAWN_BONUS_BASE = 14;
-    private static final int PASSED_PAWN_BONUS_PER_RANK = 10; // more advanced = more bonus
+    private static final int PASSED_PAWN_BONUS_PER_RANK = 10;
 
     // Piece evaluation / patterns
     private static final int BISHOP_PAIR_BONUS = 25;
@@ -41,24 +45,31 @@ public final class ClassicalEvaluator {
         | sqBB(Constants.C5) | sqBB(Constants.F5)
         | sqBB(Constants.C6) | sqBB(Constants.D6) | sqBB(Constants.E6) | sqBB(Constants.F6);
 
-    private static final int CENTER_CONTROL_BONUS = 6;  // per controlled square in CENTER_4
-    private static final int EXT_CENTER_CONTROL_BONUS = 2; // per controlled square in EXT_CENTER
-    private static final int SPACE_BONUS_PER_SQ = 1; // per advanced-controlled square on enemy half
+    private static final int CENTER_CONTROL_BONUS = 6;
+    private static final int EXT_CENTER_CONTROL_BONUS = 2;
+    private static final int SPACE_BONUS_PER_SQ = 1;
 
     // Connectivity / trapped / king safety
     private static final int CONNECTIVITY_BONUS_PER_DEFENDED_PIECE = 2;
     private static final int TRAPPED_PIECE_PENALTY = 25;
 
-    private static final int KING_SAFETY_PAWN_SHIELD = 10; // per shield pawn
-    private static final int KING_DANGER_ATTACK = 6;       // per attacker in king zone (scaled)
+    private static final int KING_SAFETY_PAWN_SHIELD = 10;
+
+    private static final int[] KING_ATTACK_SCORES =
+        {0, 4, 10, 18, 28, 40, 60, 80, 100};
 
     // Tapered eval (midgame/endgame blend)
-    // Typical phase weights: N=1, B=1, R=2, Q=4 (kings excluded)
     private static final int PHASE_N = 1, PHASE_B = 1, PHASE_R = 2, PHASE_Q = 4;
-    private static final int PHASE_MAX = 2 * (2*PHASE_N + 2*PHASE_B + 2*PHASE_R + 1*PHASE_Q); // both sides
+    private static final int PHASE_MAX = 2 * (2*PHASE_N + 2*PHASE_B + 2*PHASE_R + PHASE_Q);
 
 
     public static int evaluate(Board b) {
+
+        //calculate attacks and cache
+        AttackCache cache = new AttackCache();
+        cache.whiteAtt = allAttacks(b, Constants.WHITE);
+        cache.blackAtt = allAttacks(b, Constants.BLACK);
+
         // --- Material ---
         int material = material(b);
 
@@ -81,21 +92,21 @@ public final class ClassicalEvaluator {
         int mobility = mobility(b);
 
         // --- Center control ---
-        int center = centerControl(b);
+        int center = centerControl(cache);
 
         // --- Connectivity (pieces defended by own pieces) ---
-        int conn = connectivity(b);
+        int conn = connectivity(b, cache);
 
         // --- Trapped pieces (very rough heuristic) ---
-        int trapped = trappedPieces(b);
+        int trapped = trappedPieces(b, cache);
 
         // --- King safety ---
-        int kingSafetyMg = kingSafety(b, true);
-        int kingSafetyEg = kingSafety(b, false);
+        int kingSafetyMg = kingSafety(b, cache);
+        int kingSafetyEg = kingSafety(b, cache);
         int kingSafety = taper(kingSafetyMg, kingSafetyEg, phase);
 
         // --- Space ---
-        int space = space(b);
+        int space = space(cache);
 
         // --- Tempo ---
         int tempo = (b.sideToMove == Constants.WHITE) ? TEMPO_BONUS : -TEMPO_BONUS;
@@ -107,9 +118,7 @@ public final class ClassicalEvaluator {
         return (b.sideToMove == Constants.WHITE) ? scoreWhiteMinusBlack : -scoreWhiteMinusBlack;
     }
 
-    // =========================================================
-    // Material
-    // =========================================================
+
     private static int material(Board b) {
         int w =
             Constants.PAWN_VALUE   * BitHelper.popcount(b.whitePawns) +
@@ -128,9 +137,8 @@ public final class ClassicalEvaluator {
         return w - bl;
     }
 
-    // =========================================================
-    // Piece-Square Tables (very standard, tune later)
-    // =========================================================
+
+
     private static int pst(Board b, boolean midgame) {
         int score = 0;
 
@@ -162,9 +170,7 @@ public final class ClassicalEvaluator {
         return s;
     }
 
-    // =========================================================
-    // Pawn Structure
-    // =========================================================
+
     private static int pawnStructure(Board b) {
         int score = 0;
 
@@ -177,14 +183,12 @@ public final class ClassicalEvaluator {
     private static int evalPawnStructureSide(long myPawns, long oppPawns, boolean white) {
         int s = 0;
 
-        // Doubled pawns: count pawns per file > 1
         for (int f = 0; f < 8; f++) {
-            long file = Constants.FILE_MASKS[f]; // your FILE_MASKS repeats per square, but first 8 are files
+            long file = Constants.FILE_MASKS[f];
             int count = BitHelper.popcount(myPawns & file);
             if (count > 1) s -= DOUBLED_PAWN_PENALTY * (count - 1);
         }
 
-        // Isolated pawns: no friendly pawn on adjacent files
         for (int f = 0; f < 8; f++) {
             long file = Constants.FILE_MASKS[f];
             long pawnsOnFile = myPawns & file;
@@ -195,12 +199,10 @@ public final class ClassicalEvaluator {
             if (f < 7) adj |= Constants.FILE_MASKS[f + 1];
 
             if ((myPawns & adj) == 0) {
-                // every pawn on this file is isolated
                 s -= ISOLATED_PAWN_PENALTY * BitHelper.popcount(pawnsOnFile);
             }
         }
 
-        // Passed pawns: no opposing pawn in front on same/adjacent files
         long my = myPawns;
         while (my != 0) {
             int sq = Long.numberOfTrailingZeros(my);
@@ -214,22 +216,26 @@ public final class ClassicalEvaluator {
             long inFront = white ? northFill(sqBB(sq)) : southFill(sqBB(sq));
             long oppBlockers = oppPawns & maskFiles & inFront;
 
+            long ahead1 = white ? (sqBB(sq) << 8) : (sqBB(sq) >>> 8);
+            boolean blocked = (ahead1 & (myPawns | oppPawns)) != 0;
+
             if (oppBlockers == 0) {
                 int rank = sq >>> 3; // 0..7
                 int adv = white ? rank : (7 - rank);
-                s += PASSED_PAWN_BONUS_BASE + PASSED_PAWN_BONUS_PER_RANK * adv;
+                int bonus = PASSED_PAWN_BONUS_BASE + PASSED_PAWN_BONUS_PER_RANK;
+
+                if (blocked) bonus /= 2;
+
+                s += bonus * adv;
+
             } else {
-                // Backward pawn (very rough): pawn is behind its adjacent-file pawns and is blocked
-                long ahead1 = white ? (sqBB(sq) << 8) : (sqBB(sq) >>> 8);
-                boolean blocked = (ahead1 & (myPawns | oppPawns)) != 0;
                 if (blocked) {
                     long adj = 0;
                     if (file > 0) adj |= Constants.FILE_MASKS[file - 1];
                     if (file < 7) adj |= Constants.FILE_MASKS[file + 1];
 
-                    // if no friendly pawn can support by being on same rank or ahead (crude)
                     long supporters = myPawns & adj;
-                    long supportZone = white ? (inFront | sqBB(sq)) : (inFront | sqBB(sq));
+                    long supportZone = (inFront | sqBB(sq));
                     if ((supporters & supportZone) == 0) s -= BACKWARD_PAWN_PENALTY;
                 }
             }
@@ -238,28 +244,23 @@ public final class ClassicalEvaluator {
         return s;
     }
 
-    // =========================================================
-    // Evaluation of Pieces (bonuses/penalties)
-    // =========================================================
+
     private static int pieceFeatures(Board b) {
         int s = 0;
 
-        // Bishop pair
         if (BitHelper.popcount(b.whiteBishops) >= 2) s += BISHOP_PAIR_BONUS;
         if (BitHelper.popcount(b.blackBishops) >= 2) s -= BISHOP_PAIR_BONUS;
 
-        // Rooks on open/semi-open files
-        s += rooksOnFiles(b.whiteRooks, b.whitePawns, b.blackPawns, true);
-        s -= rooksOnFiles(b.blackRooks, b.blackPawns, b.whitePawns, false);
+        s += rooksOnFiles(b.whiteRooks, b.whitePawns, b.blackPawns);
+        s -= rooksOnFiles(b.blackRooks, b.blackPawns, b.whitePawns);
 
-        // Knight outposts: knight on 4th/5th/6th rank protected by pawn and not easily chased by enemy pawn
         s += knightOutposts(b.whiteKnights, b.whitePawns, b.blackPawns, true);
         s -= knightOutposts(b.blackKnights, b.blackPawns, b.whitePawns, false);
 
         return s;
     }
 
-    private static int rooksOnFiles(long rooks, long myPawns, long oppPawns, boolean white) {
+    private static int rooksOnFiles(long rooks, long myPawns, long oppPawns) {
         int s = 0;
         long bb = rooks;
         while (bb != 0) {
@@ -272,7 +273,7 @@ public final class ClassicalEvaluator {
             boolean oppPawnOnFile = (oppPawns & file) != 0;
 
             if (!myPawnOnFile && !oppPawnOnFile) s += ROOK_OPEN_FILE_BONUS;
-            else if (!myPawnOnFile && oppPawnOnFile) s += ROOK_SEMI_OPEN_FILE_BONUS;
+            else if (!myPawnOnFile) s += ROOK_SEMI_OPEN_FILE_BONUS;
         }
         return s;
     }
@@ -286,19 +287,17 @@ public final class ClassicalEvaluator {
 
             int rank = sq >>> 3;
             if (white) {
-                if (rank < 3) continue; // needs to be at least on 4th rank
+                if (rank < 3) continue;
             } else {
                 if (rank > 4) continue;
             }
 
             long sqMask = sqBB(sq);
 
-            // protected by pawn
-            long pawnProtect = white ? (BitHelper.blackAttacks(sqMask) /* squares from which white pawns attack this */)
+            long pawnProtect = white ? (BitHelper.blackAttacks(sqMask))
                 : (BitHelper.whiteAttacks(sqMask));
             boolean prot = (myPawns & pawnProtect) != 0;
 
-            // cannot be chased by enemy pawn (enemy pawn attacks that square)
             long enemyAttacks = white ? BitHelper.attacks(Constants.BLACK, oppPawns)
                 : BitHelper.attacks(Constants.WHITE, oppPawns);
             boolean chased = (enemyAttacks & sqMask) != 0;
@@ -308,18 +307,12 @@ public final class ClassicalEvaluator {
         return s;
     }
 
-    // =========================================================
-    // Evaluation Patterns (starter set; expand)
-    // =========================================================
+
     private static int evalPatterns(Board b) {
         int s = 0;
 
-        // Simple: bonus if you have both rooks connected (no pieces between on back rank)
         s += connectedRooksBonus(b, true);
         s -= connectedRooksBonus(b, false);
-
-        // Simple: penalty if queen comes out too early (optional; very crude)
-        // s += earlyQueenPenalty(b);
 
         return s;
     }
@@ -330,7 +323,7 @@ public final class ClassicalEvaluator {
 
         int[] sqs = BitHelper.indices(rooks);
         int a = sqs[0], c = sqs[1];
-        if ((a >>> 3) != (c >>> 3)) return 0; // must be same rank to be "connected" here
+        if ((a >>> 3) != (c >>> 3)) return 0;
 
         long between = squaresBetweenOnRank(a, c);
         long occ = b.allPieces & ~rooks;
@@ -338,9 +331,7 @@ public final class ClassicalEvaluator {
         return 0;
     }
 
-    // =========================================================
-    // Mobility
-    // =========================================================
+
     private static int mobility(Board b) {
         int s = 0;
 
@@ -348,13 +339,11 @@ public final class ClassicalEvaluator {
         long bOcc = b.blackPawns | b.blackKnights | b.blackBishops | b.blackRooks | b.blackQueens | b.blackKing;
         long occ = b.allPieces;
 
-        // White
         s += MOBILITY_N * mobilityKnights(b.whiteKnights, wOcc);
         s += MOBILITY_B * mobilityBishops(b.whiteBishops, occ, wOcc);
         s += MOBILITY_R * mobilityRooks(b.whiteRooks, occ, wOcc);
         s += MOBILITY_Q * mobilityQueens(b.whiteQueens, occ, wOcc);
 
-        // Black
         s -= MOBILITY_N * mobilityKnights(b.blackKnights, bOcc);
         s -= MOBILITY_B * mobilityBishops(b.blackBishops, occ, bOcc);
         s -= MOBILITY_R * mobilityRooks(b.blackRooks, occ, bOcc);
@@ -427,12 +416,10 @@ public final class ClassicalEvaluator {
         return m;
     }
 
-    // =========================================================
-    // Center Control (attacks onto center squares)
-    // =========================================================
-    private static int centerControl(Board b) {
-        long wAtt = allAttacks(b, Constants.WHITE);
-        long blAtt = allAttacks(b, Constants.BLACK);
+
+    private static int centerControl(AttackCache cache) {
+        long wAtt = cache.whiteAtt;
+        long blAtt = cache.blackAtt;
 
         int s = 0;
         s += CENTER_CONTROL_BONUS * BitHelper.popcount(wAtt & CENTER_4);
@@ -444,15 +431,13 @@ public final class ClassicalEvaluator {
         return s;
     }
 
-    // =========================================================
-    // Connectivity (pieces defended by own side)
-    // =========================================================
-    private static int connectivity(Board b) {
-        long wAtt = allAttacks(b, Constants.WHITE);
-        long blAtt = allAttacks(b, Constants.BLACK);
 
-        long wPieces = (b.whiteKnights | b.whiteBishops | b.whiteRooks | b.whiteQueens);
-        long blPieces = (b.blackKnights | b.blackBishops | b.blackRooks | b.blackQueens);
+    private static int connectivity(Board b, AttackCache cache) {
+        long wAtt = cache.whiteAtt;
+        long blAtt = cache.blackAtt;
+
+        long wPieces = b.whitePawns | b.whiteKnights | b.whiteBishops | b.whiteRooks | b.whiteQueens;
+        long blPieces = b.blackPawns | b.blackKnights | b.blackBishops | b.blackRooks | b.blackQueens;
 
         int s = 0;
         s += CONNECTIVITY_BONUS_PER_DEFENDED_PIECE * BitHelper.popcount(wPieces & wAtt);
@@ -463,15 +448,15 @@ public final class ClassicalEvaluator {
     // =========================================================
     // Trapped pieces (crude heuristic: very low mobility AND attacked)
     // =========================================================
-    private static int trappedPieces(Board b) {
+    private static int trappedPieces(Board b, AttackCache cache) {
         int s = 0;
 
         long wOcc = b.whitePawns | b.whiteKnights | b.whiteBishops | b.whiteRooks | b.whiteQueens | b.whiteKing;
         long bOcc = b.blackPawns | b.blackKnights | b.blackBishops | b.blackRooks | b.blackQueens | b.blackKing;
         long occ = b.allPieces;
 
-        long wEnemyAtt = allAttacks(b, Constants.BLACK);
-        long bEnemyAtt = allAttacks(b, Constants.WHITE);
+        long wEnemyAtt = cache.blackAtt;
+        long bEnemyAtt = cache.whiteAtt;
 
         // White trapped minors
         s -= trappedMinorPenalty(b.whiteKnights, wOcc, occ, wEnemyAtt, true);
@@ -512,7 +497,7 @@ public final class ClassicalEvaluator {
     // =========================================================
     // King Safety (pawn shield + enemy attacks in king zone)
     // =========================================================
-    private static int kingSafety(Board b, boolean midgame) {
+    private static int kingSafety(Board b, AttackCache cache) {
         // In endgame, king safety matters less; you can reduce weight by tapering (done by caller).
         int s = 0;
 
@@ -527,16 +512,14 @@ public final class ClassicalEvaluator {
         s -= pawnShieldBonus(b.blackPawns, bKingSq, false);
 
         // Enemy attacks in king zone
-        long wEnemyAtt = allAttacks(b, Constants.BLACK);
-        long bEnemyAtt = allAttacks(b, Constants.WHITE);
+        long wEnemyAtt = cache.blackAtt;
+        long bEnemyAtt = cache.whiteAtt;
 
         int attacksOnWhite = BitHelper.popcount(wEnemyAtt & wZone);
         int attacksOnBlack = BitHelper.popcount(bEnemyAtt & bZone);
 
-        // Scale more in midgame; caller tapers, but we can also slightly scale here
-        int scale = midgame ? 1 : 0; // keep it simple; taper already handles it
-        s -= (KING_DANGER_ATTACK * attacksOnWhite) * (midgame ? 1 : 0);
-        s += (KING_DANGER_ATTACK * attacksOnBlack) * (midgame ? 1 : 0);
+        s -= KING_ATTACK_SCORES[Math.min(8, attacksOnWhite)];
+        s += KING_ATTACK_SCORES[Math.min(8, attacksOnBlack)];
 
         return s;
     }
@@ -559,9 +542,9 @@ public final class ClassicalEvaluator {
     // =========================================================
     // Space (controlled squares on enemy half, excluding pawn-only)
     // =========================================================
-    private static int space(Board b) {
-        long wAtt = allAttacks(b, Constants.WHITE);
-        long blAtt = allAttacks(b, Constants.BLACK);
+    private static int space(AttackCache cache) {
+        long wAtt = cache.whiteAtt;
+        long blAtt = cache.blackAtt;
 
         long whiteHalfEnemy = Constants.RANK_5 | Constants.RANK_6 | Constants.RANK_7 | Constants.RANK_8;
         long blackHalfEnemy = Constants.RANK_1 | Constants.RANK_2 | Constants.RANK_3 | Constants.RANK_4;
