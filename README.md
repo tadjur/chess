@@ -81,30 +81,30 @@ java -cp out app.UCI
 
 Currently supports:
 
-uci
+- uci
 
-isready
+- isready
 
-position
+- position
 
-go
+- go
 
-ucinewgame
+- ucinewgame
 
-Integration with GUIs (Arena, CuteChess, etc.) is partially implemented and improving.
+- Integration with GUIs (Arena, CuteChess, etc.) is partially implemented and improving.
 
 ## 🚀 Roadmap
 
-Full UCI time management + bestmove output
+- Full UCI time management + bestmove output
 
-Improved aspiration windows
+- Improved aspiration windows
 
-Search extensions (check / singular)
+- Search extensions (check / singular)
 
-SMP parallel search
+- SMP parallel search
 
-Opening book
+- Opening book
 
-Simple GUI frontend
+- Simple GUI frontend
 
-Automated testing suite
+- Automated testing suite
