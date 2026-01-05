@@ -30,8 +30,8 @@ This project started as a learning exercise and evolved into a competitive engin
 Play against the engine directly in a terminal:
 
 ```bash
-javac -d out $(find . -name "*.java")
-java -cp out app.ConsoleGame
+./gradlew jar
+java -jar build/libs/chess-1.0.jar
 ```
 
 The engine loads the standard chess starting position and will alternate moves with the user.
