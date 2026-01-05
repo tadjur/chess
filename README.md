@@ -39,29 +39,29 @@ The engine loads the standard chess starting position and will alternate moves w
 🧠 Search Overview
 Move Ordering
 
-TT move first
+- TT move first
 
-MVV-LVA capture scoring
+- MVV-LVA capture scoring
 
-Killer moves
+- Killer moves
 
-History heuristic
+- History heuristic
 
 Pruning / Reductions
 
-Null-move pruning
+- Null-move pruning
 
-Late-move reductions
+- Late-move reductions
 
-Futility-style evaluation margins
+- Futility-style evaluation margins
 
 Endgame Handling
 
-Repetition detection
+- Repetition detection
 
-50-move rule
+- 50-move rule
 
-Ply-based mate scoring
+- Ply-based mate scoring
 
 🧪 Perft (Correctness Testing)
 
