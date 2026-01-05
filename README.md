@@ -63,7 +63,7 @@ Endgame Handling
 
 - Ply-based mate scoring
 
-🧪 Perft (Correctness Testing)
+## 🧪 Perft (Correctness Testing)
 
 The engine includes a perft implementation to verify move generator correctness:
 ```bash
@@ -71,7 +71,7 @@ long nodes = Perft.perft(board, depth);
 ```
 Perft outputs can be compared with known reference engines.
 
-🤖 UCI Support (Work in Progress)
+## 🤖 UCI Support (Work in Progress)
 
 A basic UCI shell is included:
 
@@ -93,7 +93,7 @@ ucinewgame
 
 Integration with GUIs (Arena, CuteChess, etc.) is partially implemented and improving.
 
-🚀 Roadmap
+## 🚀 Roadmap
 
 Full UCI time management + bestmove output
 
