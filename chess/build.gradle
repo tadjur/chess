@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'maven-publish'
 }
 
 group = 'com.yourname.chess'
@@ -15,4 +16,18 @@ tasks.jar {
     archiveBaseName = "chess-engine-core"
 
     include("engine/**")
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            groupId = 'com.juricektadeas.chess'
+            artifactId = 'chess-engine-core'
+            version = '0.1.0'
+        }
+    }
+    repositories {
+        mavenLocal()
+    }
 }

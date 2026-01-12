@@ -96,7 +96,7 @@ public final class MainGameLoop {
           board,
           remainingMs,
           incMs,
-          /* fullmoveNumber */ 1,
+          board.fullmoveNumber,
           lastEvalCp,
           last2EvalCp
       );
