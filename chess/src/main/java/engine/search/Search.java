@@ -17,7 +17,7 @@ public final class Search {
     public static final int INF = 100_000;
     public static final int MATE = 30000;
 
-    private static final int Q_MAX_PLY = 16;
+    private static final int Q_MAX_PLY = 10;
 
 
     private static final int HISTORY_MAX = 200_000;
@@ -56,7 +56,6 @@ public final class Search {
     public int search(Board board, int maxDepth) {
 
         final int THREADS = Runtime.getRuntime().availableProcessors();
-        System.out.println(THREADS);
 
         long startNodes = GLOBAL_NODES.get();
 
@@ -97,6 +96,17 @@ public final class Search {
         this.nodes = endNodes - startNodes;
 
         pool.shutdown();
+
+        long time = System.currentTimeMillis() - startTimeMs;
+        long searched = this.nodes;
+        long nps = time > 0 ? searched * 1000L / time : 0;
+
+        System.out.printf(
+            "Search: nodes=%d time=%dms nps=%d%n",
+            searched, time, nps
+        );
+
+
         return bestMove;
     }
 
@@ -203,15 +213,15 @@ public final class Search {
             allowNull = false;
         }
 
-        if (allowNull && depth >= 3
+        if (allowNull && depth >= 2
             && !board.isInCheck()
-            && board.nonPawnMaterial(board.sideToMove) >= 8){
+            && board.nonPawnMaterial(board.sideToMove) >= 6){
 
             board.makeNullMove();
 
             int score = -alphaBeta(
                 board,
-                depth - 1 - 2,
+                depth - 1 - 3,
                 -beta,
                 -beta + 1,
                 ply + 1, false);
@@ -229,7 +239,7 @@ public final class Search {
         if (!inCheck && depth <= 2) {
             int staticEval = evaluate(board);
 
-            int margin = 200 * depth;
+            int margin = 250 + 150 * depth;
 
             if (staticEval + margin <= alpha) {
                 return staticEval;
@@ -312,13 +322,14 @@ public final class Search {
 
                 if (!inCheck && quiet && depth >= 3 && i >= 3) {
                     reduction = 1;
-                    if (i >= 8 && depth >= 5) reduction = 2;
+                    if (i >= 6) reduction = 2;
+                    if (i >= 12 && depth >= 6) reduction = 3;
                 }
 
                 int newDepth = (depth - 1) - reduction;
                 score = -alphaBeta(board, newDepth, -alpha - 1, -alpha, ply + 1, true);
 
-                if (score > alpha) {
+                if (score > alpha + 1) {
                     score = -alphaBeta(board, depth - 1, -beta, -alpha, ply + 1, true);
                 }
             }
@@ -399,6 +410,8 @@ public final class Search {
         }
 
         int standPat = evaluate(board);
+
+        if(standPat + 900 < alpha) return standPat;
 
         if (standPat >= beta) {
             return standPat;
@@ -497,9 +510,6 @@ public final class Search {
         int v = context.history[moverSide][from][to] + depth * depth;
         context.history[moverSide][from][to] = Math.min(v, HISTORY_MAX);
     }
-
-
-
 
 
 }
