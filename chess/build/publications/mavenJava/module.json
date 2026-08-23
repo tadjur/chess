@@ -1,0 +1,60 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "com.juricektadeas.chess",
+    "module": "chess-engine-core",
+    "version": "0.5.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.2.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 21,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "files": [
+        {
+          "name": "chess-engine-core-0.5.0.jar",
+          "url": "chess-engine-core-0.5.0.jar",
+          "size": 48739,
+          "sha512": "d6b12310e5560b885e7b05a8556697a44f7f23bb06a496204e6da3b0237e559a6e0e4005a1157f525787d4e663e2a120bdd94971d0cf6908418a2852f93fc016",
+          "sha256": "fba33ee18a4fe0eef92554431abbd234cb4c19b870b98fae572e52570c90caaa",
+          "sha1": "dd8e44537d45208918d67b829a4a0321542e26e5",
+          "md5": "ebeb03ab79a454703496166d96004fa9"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 21,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "chess-engine-core-0.5.0.jar",
+          "url": "chess-engine-core-0.5.0.jar",
+          "size": 48739,
+          "sha512": "d6b12310e5560b885e7b05a8556697a44f7f23bb06a496204e6da3b0237e559a6e0e4005a1157f525787d4e663e2a120bdd94971d0cf6908418a2852f93fc016",
+          "sha256": "fba33ee18a4fe0eef92554431abbd234cb4c19b870b98fae572e52570c90caaa",
+          "sha1": "dd8e44537d45208918d67b829a4a0321542e26e5",
+          "md5": "ebeb03ab79a454703496166d96004fa9"
+        }
+      ]
+    }
+  ]
+}
